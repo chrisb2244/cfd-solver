@@ -3,6 +3,8 @@
 #include "FieldOperations/FieldOperations.h"
 #include "catch.hpp"
 
+#include <iostream>
+
 template<size_t fD, size_t mD>
 bool allVals(const Field<double, fD, mD>& f, const double val) {
     for (auto& vec : f.data()) {
@@ -63,6 +65,7 @@ TEST_CASE("Field tests", "[field]" ) {
     Field<double, 2, 2> testTwoV(mesh2D, "vectorIn2D");
 
     SECTION ("Construction") {
+        std::cout << "Construction" << std::endl;
         REQUIRE(testOneS.numCells() == 10);
 
         REQUIRE(testTwoS.numCells() == 100);
@@ -81,6 +84,7 @@ TEST_CASE("Field tests", "[field]" ) {
     }
 
     SECTION ("Assignment") {
+        std::cout << "Assignment" << std::endl;
         // setFixed
         testOneS.setFixed(4.3);
         REQUIRE(allVals(testOneS, 4.3));
@@ -107,8 +111,38 @@ TEST_CASE("Field tests", "[field]" ) {
             Field<double, 1, 1> temp(mesh1D, "temp");
             temp = testOneS;
             REQUIRE(temp.x()[0] == Approx(2.5));
-            temp = temp + 2.5;
+            temp = (temp + 2.5);
+            for (auto& vec : temp.data()) {
+                for (uint i=0; i<vec.size(); i++) {
+                    std::cout << "v[" << i << "] = " << vec[i] << std::endl;
+                }
+            }
             REQUIRE(temp.x()[0] == Approx(5.0));
+        }
+    }
+
+    SECTION ("Copy and move assignment and construction") {
+        SECTION ("Copying") {
+            Field<double, 1, 1> copiedField(testOneS);
+            REQUIRE(copiedField == testOneS);
+            REQUIRE(!copiedField.strictlyEqual(testOneS));
+
+            Field<double, 2, 2> copiedFieldV(testTwoV);
+            REQUIRE(copiedFieldV == testTwoV);
+            REQUIRE(!copiedFieldV.strictlyEqual(testTwoV));
+        }
+        SECTION ("Moving") {
+            std::cout << "Testing moves" << std::endl;
+            Field<double, 1, 1> copiedField(testOneS);
+            Field<double, 1, 1> *ptr = &copiedField;
+            Field<double, 1, 1> movedField(std::move(copiedField));
+            std::cout << "At requires" << std::endl;
+            REQUIRE(movedField == testOneS);
+//            REQUIRE(&movedField == ptr);
+
+//            Field<double, 2, 2> movedFieldV(std::move(testTwoV));
+//            REQUIRE(movedFieldV == testTwoV);
+//            REQUIRE(movedFieldV.strictlyEqual(testTwoV));
         }
     }
 }

@@ -75,8 +75,9 @@ template<size_t meshDim>
 double Mesh<meshDim>::getPosition(const size_t d, const int &i) const
 {
     // Bounds checking if NDEBUG not defined
+    // TODO - remove the abs
     assert(i>=0);
-    assert(i<dimSize_[d]);
+    assert(std::abs(i)<dimSize_[d]);
     return position_[d][i];
 }
 

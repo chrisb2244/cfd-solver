@@ -64,12 +64,41 @@ public:
         }
     }
 
-    // Delete copy/move constructor
-    Mesh(const Mesh<meshDim>&) = delete;
-    Mesh(const Mesh<meshDim>&&) = delete;
-    // Copy/Move assignment operators
-    Mesh<meshDim>& operator=(const Mesh<meshDim> &rhs) = delete;
-    Mesh<meshDim>& operator=(const Mesh<meshDim> &&rhs) = delete;
+    // Copy and move constructors
+    Mesh(const Mesh<meshDim>& rhs):
+        dimMin_(rhs.dimMin()),
+        dimMax_(rhs.dimMax()),
+        dimSize_(rhs.dimSizes()),
+        numCells_(rhs.numCells()),
+        scalingType_(rhs.scalingType()),
+        position_(rhs.position_)
+    {}
+
+    Mesh(Mesh<meshDim>&& rhs):
+        Mesh()
+    {
+        swap(*this, rhs);
+    }
+
+    // Copy/move assignment operator
+    Mesh<meshDim>& operator=(Mesh<meshDim> rhs) {
+        swap(*this, rhs);
+        return *this;
+    }
+
+    friend void swap(Mesh<meshDim>& first, Mesh<meshDim>& second) {
+        using std::swap;
+        swap(first.dimMin_, second.dimMin_);
+        swap(first.dimMax_, second.dimMax_);
+        swap(first.dimSize_, second.dimSize_);
+        swap(first.numCells_, second.numCells_);
+        swap(first.scalingType_, second.scalingType_);
+        swap(first.position_, second.position_);
+    }
+
+    static Mesh<meshDim> dummyMesh() {
+        return Mesh();
+    }
 
     size_t numCells() const { return numCells_; }
     // Always defined (can't have a 0D mesh)
@@ -113,13 +142,27 @@ public:
     const MeshScalingType& scalingType() const { return scalingType_; }
 
 private:
+    // Data members
     std::vector<double> dimMin_;
     std::vector<double> dimMax_;
     std::vector<size_t> dimSize_;
     size_t numCells_;
     MeshScalingType scalingType_;
-
     std::vector<double> position_[meshDim];
+    // End data members
+
+    Mesh():
+        dimMin_(meshDim),
+        dimMax_(meshDim),
+        dimSize_(meshDim),
+        numCells_(),
+        scalingType_(MeshScalingType::Constant)
+    {
+        for (size_t d=0; d<meshDim; d++) {
+            position_[d] = std::vector<double>();
+        }
+    }
+
     void placeCentres(const int d);
     size_t calcNumCells() const;
 
@@ -127,5 +170,14 @@ private:
 
     void checkBounds(std::vector<size_t> idxs) const;
 };
+
+//class dummyMesh:
+//    public Mesh<1>
+//{
+//public:
+//    dummyMesh():
+//        Mesh(MeshScalingType::Constant, MeshDimension(1,0,1))
+//    {}
+//};
 
 #endif // MESH_H
