@@ -16,6 +16,7 @@
 #include <array>
 #include "Mesh.h"
 #include <utility>
+#include <memory>
 
 #include <iostream>
 
@@ -24,43 +25,26 @@ class Field
 {
     using vectorField = Field<T,mD,mD>;
     using scalarField = Field<T,1,mD>;
+    using MeshPtr = std::shared_ptr<const Mesh<mD>>;
 
 public:
     // Empty value constructor
-    Field(const Mesh<mD> &mesh, const std::string& name):
+    Field(const MeshPtr mesh, const std::string& name):
         Field(mesh, name, std::make_index_sequence<fD>{})
     {}
 
 // ------ Copy, move, destructor calls need declaring and defining ---------
-    Field(const Field<T,fD,mD>& rhs):
-        mesh_(rhs.mesh()),
+    Field(const Field<T, fD, mD> &rhs, const std::string& name = std::string()):
+        mesh_(rhs.meshPtr()),
         numCells_(rhs.numCells()),
-        name_(rhs.name()),
+        xCells_(rhs.xCells_), yCells_(rhs.yCells_), zCells_(rhs.zCells_),
+        name_(name.empty() ? rhs.name() : name),
         valueArray_(rhs.data())
     {}
 
-    Field(const Field<T, fD, mD> &rhs, const std::string& name):
-        mesh_(rhs.mesh()),
-        numCells_(rhs.numCells()),
-        name_(name),
-        valueArray_(rhs.data())
-    {}
-
-    Field(Field<T, fD, mD> &&rhs):
-        Field<T,fD,mD>(Mesh<mD>::dummyMesh())
-    {
+    Field(Field<T, fD, mD> &&rhs): Field<T,fD,mD>() {
         swap(*this, rhs);
     }
-
-//        mesh_(rhs.mesh()),
-//        numCells_(rhs.numCells()),
-//        name_(rhs.name())
-//    {
-//        for (size_t d=0; d<fD; d++) {
-//            valueArray_[d] = std::move(rhs.data()[d]);
-//        }
-//        std::cout << "Moved" << std::endl;
-//    }
 
     ~Field() = default;
 
@@ -71,35 +55,40 @@ public:
 
     friend void swap(Field<T,fD,mD>& first, Field<T,fD,mD>& second) {
         using std::swap;
-        swap(const_cast<Mesh<mD>&>(first.mesh_),
-             const_cast<Mesh<mD>&>(second.mesh_));
-//        swap(first.mesh_, second.mesh_);
-
+        swap(first.mesh_, second.mesh_);
 //        swap(const_cast<size_t>(first.numCells_),
 //             const_cast<size_t>(second.numCells_));
         swap(first.numCells_, second.numCells_);
-
+        swap(first.xCells_, second.xCells_);
+        swap(first.yCells_, second.yCells_);
+        swap(first.zCells_, second.zCells_);
         swap(first.name_, second.name_);
         swap(first.valueArray_, second.valueArray_);
     }
-
 // -------------- Copy, move, assignment and destructor calls --------------
 
-    // Mathematical operators - should these be a part of Field?
-    const Field<T,fD,mD> operator+(const T& rhs) const {
-        Field<T,fD,mD> temp(*this);
-        for (std::vector<T>& vec : temp.data()) {
+
+    // Compound mathematical operators
+    const Field<T,fD,mD> operator+=(const T& rhs) {
+        for (std::vector<T>& vec : valueArray_) {
             for (T& v : vec) {
-                std::cout << "v = " << v;
                 v += rhs;
-                std::cout << " -> v = " << v << std::endl;
             }
         }
-        return temp;
+        return *this;
     }
-    const Field<T,fD,mD> operator-(const T& rhs) const {
-        return (*this->operator +(-rhs));
+    const Field<T,fD,mD> operator-=(const T& rhs) {
+        return this->operator+=(-rhs);
     }
+    const Field<T,fD,mD> operator*=(const T& rhs) {
+        for (std::vector<T>& vec : valueArray_) {
+            for (T& v : vec) {
+                v *= rhs;
+            }
+        }
+        return *this;
+    }
+
 
     // Set values unilaterally.
     void setZero() { setFixed(T()); }
@@ -111,13 +100,11 @@ public:
 
     // Test equality
     bool operator==(const Field<T,fD,mD>& rhs) {
-        if (mesh_ != rhs.mesh()) {
-            std::cout << "mesh failed" << std::endl;
+        if (*mesh_ != rhs.mesh()) {
             return false;
         }
         for (size_t d=0; d<fD; d++) {
             if (valueArray_[d] != rhs.data()[d]) {
-                std::cout << "vec[" << d << "] failed" << std::endl;
                 return false;
             }
         }
@@ -136,7 +123,7 @@ public:
         return (this==(&rhs));
     }
 
-    // Value lookup
+    // Value lookup (every cell, one component)
     const std::vector<T>& x() const { return valueArray_[0]; }
     template<size_t md=mD, EnableIf<md>=2>...>
     const std::vector<T> &y() const { return valueArray_[1]; }
@@ -149,38 +136,112 @@ public:
     template<size_t md=mD, EnableIf<md>=3>...>
     std::vector<T> &z() { return valueArray_[2]; }
 
+    // Individual lookups (probably slow, mark deprecated?)
+    // Should these check the type of Idxs?
+    template<typename... Idxs, EnableIf<sizeof...(Idxs)==mD>...>
+    [[deprecated]] const T x(const Idxs... idxs) const {
+        return valueArray_[0][getSingleIdx(idxs...)];
+    }
+
     // Other lookups
     size_t numCells() const { return numCells_; }
-    const Mesh<mD> &mesh() const { return mesh_; }
+    const Mesh<mD> &mesh() const { return *mesh_; }
+    MeshPtr meshPtr() const { return mesh_; }
     const std::string &name() const { return name_; }
     std::array<std::vector<T>, fD> data() { return valueArray_; }
     const std::array<std::vector<T>, fD> data() const { return valueArray_; }
 
 private:
     // Data members
-    const Mesh<mD> &mesh_;
+    std::shared_ptr<const Mesh<mD>> mesh_;
     /*const*/ size_t numCells_;
+    size_t xCells_, yCells_, zCells_;
     std::string name_;
     std::array<std::vector<T>, fD> valueArray_;
     // End data members
 
-    // Sub-constructor for delegation
+    template<typename... Idxs, EnableIf<sizeof...(Idxs)==mD>...>
+    [[deprecated]] size_t getSingleIdx(const Idxs... idxs) const {
+        std::vector<size_t> idx { idxs... };
+        // For <=3D meshes, will never cut out an index - just pad with 0s.
+        idx.resize(3);
+        return idx[0] + (idx[1]*xCells_) + (idx[2]*xCells_*yCells_);
+    }
+
+
+// --------------- Delegated constructors ---------------------------------- //
+    // Delegated empty but appropriately sized constructor
     template<size_t... Is>
-    Field(const Mesh<mD> &mesh, const std::string& name, std::index_sequence<Is...>):
+    Field(const MeshPtr mesh, const std::string& name, std::index_sequence<Is...>):
         mesh_(mesh),
-        numCells_(mesh.numCells()),
+        numCells_(mesh->numCells()),
+        xCells_(mesh->xCells()),
+        yCells_(mesh->yCells()),
+        zCells_(mesh->zCells()),
         name_(name),
         valueArray_{ { std::vector<T>(((void)Is, numCells_))... } }
     {}
 
-    Field(Mesh<mD> dummy):
-        mesh_(dummy),
-        numCells_(1),
-        name_(""),
-        valueArray_(std::array<std::vector<T>,1>{std::vector<T>{0}})
+    // Default constructor with appropriate number of empty vector<T>s
+    Field():
+        Field(std::make_index_sequence<fD>{})
     {}
+
+    // Delegated empty constructor
+    template<size_t... Is>
+    Field(std::index_sequence<Is...>):
+        mesh_(nullptr),
+        numCells_(),
+        xCells_(),
+        yCells_(),
+        zCells_(),
+        name_(""),
+        valueArray_{{ std::vector<T>(((void)Is, 0))... }}
+    {}
+// --------------- End delegated constructors ------------------------------ //
 };
 
+// Mathematical operators that don't change the Field
+template<typename T, size_t fD, size_t mD>
+const Field<T,fD,mD> operator+(Field<T,fD,mD> lhs,
+                               const typename std::common_type<T>::type &rhs)
+{
+    return lhs += rhs;
+}
 
+template<typename T, size_t fD, size_t mD>
+const Field<T,fD,mD> operator+(const typename std::common_type<T>::type &lhs,
+                               Field<T,fD,mD> rhs)
+{
+    return rhs += lhs;
+}
+
+template<typename T, size_t fD, size_t mD>
+const Field<T,fD,mD> operator-(Field<T,fD,mD> lhs,
+                               const typename std::common_type<T>::type &rhs)
+{
+    return lhs -= rhs;
+}
+
+template<typename T, size_t fD, size_t mD>
+const Field<T,fD,mD> operator-(const typename std::common_type<T>::type &lhs,
+                               Field<T,fD,mD> rhs)
+{
+    return (-1 * rhs) += lhs;
+}
+
+template<typename T, size_t fD, size_t mD>
+const Field<T,fD,mD> operator*(Field<T,fD,mD> lhs,
+                               const typename std::common_type<T>::type &rhs)
+{
+    return lhs *= rhs;
+}
+
+template<typename T, size_t fD, size_t mD>
+const Field<T,fD,mD> operator*(const typename std::common_type<T>::type &lhs,
+                               Field<T,fD,mD> rhs)
+{
+    return rhs *= lhs;
+}
 
 #endif // DATASTRUCTURES_FIELD_TPP

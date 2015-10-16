@@ -18,6 +18,7 @@
 #include <cassert>
 
 #include "TemplateFunctions.H"
+#include "BoundingBox.h"
 
 struct MeshDimension
 {
@@ -41,6 +42,12 @@ enum class MeshScalingType {
     Exponential
 };
 
+template<size_t n>
+struct helper
+{
+    typedef std::size_t type;
+};
+
 template<size_t meshDim>
 class Mesh
 {
@@ -60,6 +67,7 @@ public:
             dimMin_.push_back(dimList[i].minVal_);
             dimMax_.push_back(dimList[i].maxVal_);
             numCells_ = calcNumCells();
+            placeEdges(i);
             placeCentres(i);
         }
     }
@@ -71,7 +79,8 @@ public:
         dimSize_(rhs.dimSizes()),
         numCells_(rhs.numCells()),
         scalingType_(rhs.scalingType()),
-        position_(rhs.position_)
+        centrePosition_(rhs.centrePosition_),
+        edgePosition_(rhs.edgePosition_)
     {}
 
     Mesh(Mesh<meshDim>&& rhs):
@@ -93,12 +102,11 @@ public:
         swap(first.dimSize_, second.dimSize_);
         swap(first.numCells_, second.numCells_);
         swap(first.scalingType_, second.scalingType_);
-        swap(first.position_, second.position_);
+        swap(first.centrePosition_, second.centrePosition_);
+        swap(first.edgePosition_, second.edgePosition_);
     }
 
-    static Mesh<meshDim> dummyMesh() {
-        return Mesh();
-    }
+    static Mesh<meshDim> dummyMesh() { return Mesh(); }
 
     size_t numCells() const { return numCells_; }
     // Always defined (can't have a 0D mesh)
@@ -113,6 +121,45 @@ public:
     size_t zCells() const { return dimSize_[2]; }
     template<size_t meshD = meshDim, EnableIf<meshD<3>...>
     size_t zCells() const { return 0; }
+
+    // BoundingBox for the entire Mesh
+    BoundingBox<meshDim> bounds() const;
+
+    // BoundingBox for a specific cell
+    template<size_t mD = meshDim, EnableIf<mD==1>...>
+    BoundingBox<meshDim> bounds(const size_t idx) const {
+        std::vector<double> bnds;
+        bnds.push_back(edgePosition_[0][idx]);
+        bnds.push_back(edgePosition_[0][idx+1]);
+        return BoundingBox<meshDim>(std::move(bnds));
+    }
+
+    template<size_t mD = meshDim, EnableIf<mD>=2>...>
+    BoundingBox<meshDim> bounds(const size_t idx) const {
+        // Convert single index to set of indices
+        std::vector<size_t> idcs(meshDim);
+        getSubIdx(idcs, idx, helper<mD>());
+        std::vector<double> bnds;
+        for (size_t d=0; d<meshDim; d++) {
+            bnds.push_back(edgePosition_[d][idcs[d]]);
+            bnds.push_back(edgePosition_[d][idcs[d]+1]);
+        }
+        return BoundingBox<meshDim>(std::move(bnds));
+    }
+
+    template<typename... Indices,
+             size_t mD = meshDim,
+             EnableIf<mD>=2>...,
+             EnableIf<sizeof...(Indices)==mD>...>
+    BoundingBox<meshDim> bounds(const Indices... indices) const {
+         std::vector<double> bnds;
+         std::vector<size_t> idx { indices... };
+         for (size_t d=0; d<meshDim; d++) {
+             bnds.push_back(edgePosition_[d][idx[d]]);
+             bnds.push_back(edgePosition_[d][idx[d]+1]);
+         }
+         return BoundingBox<meshDim>(std::move(bnds));
+    }
 
 //    double x(const size_t &i) const { return getPosition(0, i); }
 //    template<size_t meshD = meshDim, EnableIf<meshD>=2>...>
@@ -148,7 +195,8 @@ private:
     std::vector<size_t> dimSize_;
     size_t numCells_;
     MeshScalingType scalingType_;
-    std::vector<double> position_[meshDim];
+    std::vector<double> centrePosition_[meshDim];
+    std::vector<double> edgePosition_[meshDim];
     // End data members
 
     Mesh():
@@ -159,25 +207,22 @@ private:
         scalingType_(MeshScalingType::Constant)
     {
         for (size_t d=0; d<meshDim; d++) {
-            position_[d] = std::vector<double>();
+            centrePosition_[d] = std::vector<double>();
+            edgePosition_[d] = std::vector<double>();
         }
     }
 
     void placeCentres(const int d);
+    void placeEdges(const int d);
     size_t calcNumCells() const;
 
-    double getPosition(const size_t d, const int &i) const;
+    double getCentre(const size_t d, const size_t i) const;
 
     void checkBounds(std::vector<size_t> idxs) const;
-};
 
-//class dummyMesh:
-//    public Mesh<1>
-//{
-//public:
-//    dummyMesh():
-//        Mesh(MeshScalingType::Constant, MeshDimension(1,0,1))
-//    {}
-//};
+    template<size_t dim_n>
+    void getSubIdx(std::vector<size_t> &vec, const size_t& remainder, helper<dim_n>) const;
+    void getSubIdx(std::vector<size_t> &vec, const size_t &remainder, helper<1>) const;
+};
 
 #endif // MESH_H

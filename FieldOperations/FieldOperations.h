@@ -1,15 +1,16 @@
 #ifndef FIELD_OPERATIONS_H
 #define FIELD_OPERATIONS_H
 
-#include "Field.tpp"
-#include <cstddef>
-
-namespace FieldOperations
+namespace FieldOps
 {
-    template<typename T, size_t fD, size_t mD>
-    Field<T,fD,mD> operator+(Field<T,fD,mD> lhs, const Field<T,fD,mD> &rhs);/* {
-        return lhs;
-    }*/
+    enum class gradType {
+        CentralDifferencing,
+        Upwind
+    };
+
+    enum class divergenceType {
+        Type1
+    };
 }
 
 #endif // FIELD_OPERATIONS_H
